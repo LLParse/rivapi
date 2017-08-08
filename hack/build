@@ -1,0 +1,21 @@
+#!/bin/bash -e
+
+ACCT=${ACCT:-llparse}
+VERSION=${VERSION:-0.2}
+
+NAME=registryranch
+APP_PATH=github.com/$ACCT/$NAME
+
+docker build -t $NAME-golang -f Dockerfile.build .
+
+docker run \
+  --rm \
+  -v ${PWD}:/usr/src/${APP_PATH} \
+  -w /usr/src/${APP_PATH} \
+    $NAME-golang \
+      go build -o bin/$NAME
+
+docker build -t $ACCT/$NAME:$VERSION .
+docker push $ACCT/$NAME:$VERSION
+
+rm -f bin/registryranch

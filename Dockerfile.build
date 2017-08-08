@@ -1,0 +1,7 @@
+FROM golang:1.7-alpine
+
+RUN apk add --update --no-cache git
+RUN go get github.com/blang/semver
+RUN go get github.com/go-yaml/yaml
+RUN go get github.com/gorilla/mux
+
