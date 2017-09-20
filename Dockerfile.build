@@ -4,4 +4,4 @@ RUN apk add --update --no-cache git
 RUN go get github.com/blang/semver
 RUN go get github.com/go-yaml/yaml
 RUN go get github.com/gorilla/mux
-
+RUN go get github.com/Sirupsen/logrus

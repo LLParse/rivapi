@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	// "strings"
+	"regexp"
 	"sync"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 type Token struct {
@@ -25,7 +27,7 @@ type TagList struct {
 func (c *Client) loadTagsPeriodically() {
 	c.loadTags()
 	go func() {
-		t := time.NewTicker(15 * time.Minute)
+		t := time.NewTicker(12 * time.Hour)
 		for _ = range t.C {
 			c.loadTags()
 		}
@@ -33,8 +35,6 @@ func (c *Client) loadTagsPeriodically() {
 }
 
 func (c *Client) loadTags() {
-	fmt.Println("Loading rancher/server tags")
-
 	tagHash := make(map[string]string)
 	hashTag := make(map[string][]string)
 
@@ -54,7 +54,10 @@ func (c *Client) loadTags() {
 				}
 				m.Unlock()
 			} else {
-				fmt.Printf("Error reading tag %s: %s\n", tag, err)
+				log.WithFields(log.Fields{
+					"error": err.Error(),
+					"tag":   tag,
+				}).Warn("Error reading tag")
 			}
 			wg.Done()
 		}(tag)
@@ -74,13 +77,11 @@ func (c *Client) loadTags() {
 func (c *Client) checkToken() error {
 	// TODO validate that the token hasn't expired
 	if c.token == nil {
-		fmt.Println("Creating auth token")
 		return c.newToken()
 	}
 	// allow 30 second window for batching/transmission to server
 	expiryTime := c.token.IssuedAt.Add(time.Duration(c.token.ExpiresIn-30) * time.Second)
 	if time.Now().After(expiryTime) {
-		fmt.Println("Creating auth token")
 		return c.newToken()
 	}
 	return nil
@@ -104,6 +105,10 @@ func (c *Client) newToken() error {
 		return err
 	}
 	c.token = &token
+	log.WithFields(log.Fields{
+		"expires_in": token.ExpiresIn,
+		"issued_at":  token.IssuedAt,
+	}).Info("Created auth token")
 	return nil
 }
 
@@ -126,6 +131,20 @@ func (c *Client) getTagList() (*TagList, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// filter out release candidates
+	if !*rc {
+		var filtered []string
+		for _, tag := range tagList.Tags {
+			if matched, err := regexp.MatchString("-rc[0-9]+$", tag); !matched || err != nil {
+				filtered = append(filtered, tag)
+			}
+		}
+		tagList.Tags = filtered
+	}
+
+	c.tagList = &tagList
+	log.WithField("count", len(c.tagList.Tags)).Info("Fetched Rancher version list")
 
 	return &tagList, nil
 }

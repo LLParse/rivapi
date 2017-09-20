@@ -3,9 +3,9 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/blang/semver"
 	"github.com/go-yaml/yaml"
 	"github.com/gorilla/mux"
@@ -26,14 +27,20 @@ type Client struct {
 	httpClient *http.Client
 	token      *Token
 
+	tagList *TagList
 	tagHash map[string]string
 	hashTag map[string][]string
 }
 
+var listen = flag.String("http", ":7070", "address to listen on for http requests")
+var rc = flag.Bool("rc", false, "Include Rancher release candidates (RCs) in version list")
+
 func main() {
+	flag.Parse()
+
 	c := &Client{
 		httpClient: &http.Client{
-			Timeout: 8 * time.Second,
+			Timeout: 10 * time.Second,
 		},
 	}
 
@@ -45,8 +52,8 @@ func main() {
 	r.HandleFunc("/tags/{tag}", c.TagHandler)
 	http.Handle("/", r)
 
-	fmt.Println("Starting HTTP server")
-	fmt.Errorf("server failed: %s", http.ListenAndServe(":7070", nil))
+	log.WithField("listen", *listen).Info("Starting HTTP server")
+	log.Errorf("HTTP Server failure: %s", http.ListenAndServe(*listen, nil))
 }
 
 func makeSemver(version string) (semver.Version, error) {
@@ -89,12 +96,23 @@ func (c *Client) ImageTagHandler(w http.ResponseWriter, r *http.Request) {
 	branch := getCatalogBranch(rancherVersion)
 	dir := "rancher-catalog"
 	if exists, _ := exists(dir); !exists {
-		fmt.Println("cloning catalog")
+
+		log.WithFields(log.Fields{
+			"branch": branch,
+			"url":    url,
+		}).Info("Cloning catalog")
+
 		if err := exec.Command("git", "clone", url, "--quiet", "--branch", branch, dir).Run(); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "Error cloning catalog: %s", err)
 		}
 	} else {
+
+		log.WithFields(log.Fields{
+			"branch": branch,
+			"url":    url,
+		}).Info("Updating catalog")
+
 		// fetch any changes
 		if err := exec.Command("git", "-C", dir, "fetch", "origin").Run(); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -132,6 +150,8 @@ func (c *Client) ImageTagHandler(w http.ResponseWriter, r *http.Request) {
 			// }
 		}
 	}
+	is.Images = append(is.Images, c.getWonkyImages(versionTag)...)
+
 	is.Images = normalize(is.Images)
 	data, err := json.Marshal(is)
 	if err != nil {
@@ -354,7 +374,13 @@ func (c *Client) TagListHandler(w http.ResponseWriter, r *http.Request) {
 	for tag, hash := range c.tagHash {
 		response = response + fmt.Sprintf("%s: %s\n", tag, hash)
 	}
-	fmt.Fprintf(w, response)
+	if data, err := json.Marshal(c.tagList); err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, string(data))
+	} else {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, "Error marshalling tag list: %s", err)
+	}
 }
 
 func (c *Client) TagHandler(w http.ResponseWriter, r *http.Request) {
