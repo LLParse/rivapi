@@ -5,3 +5,7 @@ RUN go get github.com/blang/semver
 RUN go get github.com/go-yaml/yaml
 RUN go get github.com/gorilla/mux
 RUN go get github.com/Sirupsen/logrus
+RUN go get github.com/Masterminds/sprig
+RUN go get github.com/rancher/rancher-compose-executor
+RUN go get github.com/aokoli/goutils
+

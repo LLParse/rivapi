@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -145,9 +144,6 @@ func (c *Client) ImageTagHandler(w http.ResponseWriter, r *http.Request) {
 		versionDir, _ := optimalVersionDir(rancherVersion, serviceDir)
 		if versionDir != "" {
 			is.Images = append(is.Images, versionImages(serviceDir+"/"+versionDir)...)
-			// for _, image := range versionImages(serviceDir + "/" + versionDir) {
-			// 	fmt.Fprintf(w, "\t%s\n", image)
-			// }
 		}
 	}
 	is.Images = append(is.Images, c.getWonkyImages(versionTag)...)
@@ -209,15 +205,16 @@ func versionImages(versionDir string) []string {
 	composeTplFilepath := versionDir + "/docker-compose.yml.tpl"
 	var data []byte
 	if _, err := os.Stat(composeTplFilepath); err == nil {
-		data, err = ioutil.ReadFile(composeTplFilepath)
-		if err != nil {
+		data2, err2 := ioutil.ReadFile(composeTplFilepath)
+		if err2 != nil {
+			log.Error(err2)
 			return images2
 		}
-		tpl, err := regexp.Compile("{{[^}]*}}")
+		data, err = ApplyTemplating(data2)
 		if err != nil {
+			log.Error(err)
 			return images2
 		}
-		data = tpl.ReplaceAll(data, []byte{})
 	} else if _, err := os.Stat(composeFilepath); err == nil {
 		data, err = ioutil.ReadFile(composeFilepath)
 		if err != nil {
@@ -241,7 +238,11 @@ func versionImages(versionDir string) []string {
 
 	for _, content := range services {
 		if image, ok := content["image"]; ok {
-			images[image.(string)] = true
+			if image != nil {
+				images[image.(string)] = true
+			} else {
+				log.Warnf("Nil image content: %+v", content)
+			}
 		}
 	}
 
